@@ -1,5 +1,4 @@
 # coding=utf-8
-__author__ = 'fanjunwei003'
 import os
 import sqlite3
 import urllib
@@ -7,21 +6,21 @@ import urllib
 
 def pullDataBase():
     cmd = []
-    cmd.append('rm -r /tmp/loadlauncher-db/')
-    cmd.append('mkdir /tmp/loadlauncher-db/')
-    cmd.append('adb pull /data/data/com.android.launcher/databases /tmp/loadlauncher-db/')
+    cmd.append('rm -r /tmp/loadlauncher-db/ >/dev/null 2>&1')
+    cmd.append('mkdir /tmp/loadlauncher-db/ >/dev/null 2>&1')
+    cmd.append('adb pull /data/data/com.android.launcher/databases /tmp/loadlauncher-db/ >/dev/null 2>&1')
     os.system(';'.join(cmd))
 
 
 def clearDataBase():
-    cmd = 'rm -r /tmp/loadlauncher-db/'
+    cmd = 'rm -r /tmp/loadlauncher-db/ >/dev/null 2>&1'
     os.system(cmd)
 
 
 def readDB():
     conn = sqlite3.connect('/tmp/loadlauncher-db/launcher.db')
     cursor = conn.cursor()
-    sql = 'select intent,container,screen,cellX,cellY from favorites'
+    sql = 'select intent,container,screen,cellX,cellY from favorites order by container desc,screen,cellY,cellX'
     cursor.execute(sql)
     data = cursor.fetchall()
     favorites = []
@@ -34,26 +33,18 @@ def readDB():
         if packageName:
             favorites.append(makeFavoriteElement(packageName, className, container, screen, cellX, cellY))
 
-
     return '\n\n'.join(favorites)
 
 
 def makeFavoriteElement(packageName, className, container, screen, cellX, cellY):
-    # <favorite
-    # launcher:packageName="cz.dorazil.jan.QBright"
-    # launcher:className="cz.dorazil.jan.QBright.Brightness"
-    # launcher:container="-101"
-    # launcher:screen="2"
-    # launcher:x="0"
-    # launcher:y="5" />
     lines = []
     lines.append('<favorite')
-    lines.append('launcher:packageName="%s"' % packageName)
-    lines.append('launcher:className="%s"' % className)
-    lines.append('launcher:container="%s"' % container)
-    lines.append('launcher:screen="%s"' % screen)
-    lines.append('launcher:x="%s"' % cellX)
-    lines.append('launcher:y="%s"' % cellY)
+    lines.append('  launcher:packageName="%s"' % packageName)
+    lines.append('  launcher:className="%s"' % className)
+    lines.append('  launcher:container="%s"' % container)
+    lines.append('  launcher:screen="%s"' % screen)
+    lines.append('  launcher:x="%s"' % cellX)
+    lines.append('  launcher:y="%s"' % cellY)
     lines.append('/>')
     return '\n'.join(lines)
 
@@ -82,8 +73,9 @@ def packageParse(intent):
 
 if __name__ == '__main__':
     pullDataBase()
-    favorites=readDB()
-    file=open('out.txt','w')
+    favorites = readDB()
+    print favorites
+    file = open('out.txt', 'w')
     file.write(favorites)
     file.close()
     clearDataBase()

@@ -14,17 +14,18 @@ import time
 release_dir = 'release_img'
 target_produce_path = 'out/target/product/baoxue/'
 web_server_path = '/mnt/web'
-#web_server_path = 'web'
+# web_server_path = 'web'
 ProjectConfigPath = 'mediatek/config/baoxue/ProjectConfig.mk'
 modem_base_path = 'mediatek/custom/common/modem/'
-APDB_path = 'mediatek/cgen/APDB_MT6572_S01_ALPS.JB3.MP_'
+APDB_path = 'mediatek/cgen/APDB_MT6582_S01_MAIN2.1_W10.24'
 fat_sparse_file = 'fat_sparse.img'
 default_fat_sparse_path = 'prebuilts/android-arm/sdcard/' + fat_sparse_file
-scatter_file = 'MT6572_Android_scatter.txt'
+scatter_file = 'MT6582_Android_scatter.txt'
 copy_files = [scatter_file,
               'preloader_baoxue.bin',
               'MBR',
               'EBR1',
+              'EBR2',
               'lk.bin',
               'boot.img',
               'recovery.img',
@@ -34,9 +35,53 @@ copy_files = [scatter_file,
 
 copy_dirs = ['system',
              'data']
-
+config_file_name = 'changeBinConfig'
 ex_config_file_name = 'changeBinEX_config'
-
+logo_base_dir = 'mediatek/custom/common/lk/logo/'
+logo_uboot_files = [
+    'uboot.bmp',
+    'battery.bmp',
+    'low_battery.bmp',
+    'charger_ov.bmp',
+    'num_0.bmp',
+    'num_1.bmp',
+    'num_2.bmp',
+    'num_3.bmp',
+    'num_4.bmp',
+    'num_5.bmp',
+    'num_6.bmp',
+    'num_7.bmp',
+    'num_8.bmp',
+    'num_9.bmp',
+    'num_percent.bmp',
+    'bat_animation_01.bmp',
+    'bat_animation_02.bmp',
+    'bat_animation_03.bmp',
+    'bat_animation_04.bmp',
+    'bat_animation_05.bmp',
+    'bat_animation_06.bmp',
+    'bat_animation_07.bmp',
+    'bat_animation_08.bmp',
+    'bat_animation_09.bmp',
+    'bat_animation_10.bmp',
+    'bat_10_01.bmp',
+    'bat_10_02.bmp',
+    'bat_10_03.bmp',
+    'bat_10_04.bmp',
+    'bat_10_05.bmp',
+    'bat_10_06.bmp',
+    'bat_10_07.bmp',
+    'bat_10_08.bmp',
+    'bat_10_09.bmp',
+    'bat_10_10.bmp',
+    'bat_bg.bmp',
+    'bat_img.bmp',
+    'bat_100.bmp',
+]
+logo_kernel_file_name = 'kernel.bmp'
+bmp_to_raw = 'mediatek/custom/common/lk/logo/tool/bmp_to_raw'
+zpipe = 'mediatek/custom/common/lk/logo/tool/zpipe'
+mkimage = 'mediatek/build/tools/mkimage'
 writeLock = threading.RLock()
 thread_count = 0
 
@@ -421,6 +466,101 @@ def package_and_copy_to_server(tmp_dir, version, timestamp, subversion):
     subThreadCount()
 
 
+def getImgSize(path):
+    pip = os.popen('identify %s' % path)
+    res = pip.readline()
+    pip.close()
+    size_re = re.compile('\S* \S* (\S*)')
+    match = size_re.search(res)
+    if match:
+        sizex = match.groups()[0]
+        size = sizex.lower().split('x')
+        if len(size) == 2:
+            return int(size[0]), int(size[1])
+
+    return None, None
+
+
+def isSameSize(path1, path2):
+    w1, h1 = getImgSize(path1)
+    w2, h2 = getImgSize(path2)
+    if w1 and h1 and w2 and h2 and (w1 != w2 or h1 != h2):
+        return False
+    else:
+        return True
+
+
+def build_one_logo(sub_path, out_path, is_default):
+    if os.path.exists(sub_path):
+        sub_logo_path = os.path.join(sub_path, 'logo')
+        sub_media_dir = os.path.join(sub_path, 'media')
+        out_media_dir = os.path.join(out_path, 'media')
+        os.makedirs(out_media_dir)
+        copyDir(sub_media_dir, out_path)
+
+        logo_name = getProp(ProjectConfigPath, 'BOOT_LOGO').strip()
+        build_uboot_logo_files = []
+        build_uboot_logo_raw_files = []
+        for i in logo_uboot_files:
+            base_logo_file = os.path.join(logo_base_dir, logo_name, logo_name + '_' + i)
+            logo_file = os.path.join(sub_logo_path, i)
+            raw_file = os.path.join(sub_logo_path, i + '.raw')
+            if not os.path.exists(logo_file):
+                logo_file = base_logo_file
+            elif not isSameSize(base_logo_file, logo_file):
+                sys.stderr.write("Image size error:%s\n" % logo_file)
+                exit()
+
+            build_uboot_logo_files.append(logo_file)
+            build_uboot_logo_raw_files.append(raw_file)
+            os.system('%s %s %s' % (bmp_to_raw, raw_file, logo_file))
+        raws = ' '.join(build_uboot_logo_raw_files)
+        uboot_pack = os.path.join(sub_logo_path, 'uboot_pack.raw')
+        out_logo_name = os.path.join(out_path, 'logo.bin')
+        os.system('%s -l 9 %s %s' % (zpipe, uboot_pack, raws))
+        os.system('%s %s LOGO>%s' % (mkimage, uboot_pack, out_logo_name))
+        os.system('rm %s/*.raw' % sub_logo_path)
+        base_build_kernel_logo_file = os.path.join(logo_base_dir, logo_name, logo_name + '_' + logo_kernel_file_name)
+        build_kernel_logo_file = os.path.join(sub_logo_path, logo_kernel_file_name)
+        if not os.path.exists(build_kernel_logo_file):
+            build_kernel_logo_file = base_build_kernel_logo_file
+        elif not isSameSize(base_build_kernel_logo_file, build_kernel_logo_file):
+            sys.stderr.write("Image size error:%s\n" % build_kernel_logo_file)
+            exit()
+
+        if os.path.exists(build_kernel_logo_file):
+            out_kernel_logo_dir = os.path.join(out_media_dir, 'images')
+            os.makedirs(out_kernel_logo_dir)
+            out_kernel_logo_file = os.path.join(out_kernel_logo_dir, 'boot_logo')
+            os.system('%s %s %s' % (bmp_to_raw, out_kernel_logo_file, build_kernel_logo_file))
+        if is_default:
+            copyFile(out_logo_name, os.path.join(release_dir, 'logo.bin'))
+            delDir(os.path.join(release_dir, 'system', 'media', 'bootanimation.zip'))
+            delDir(os.path.join(release_dir, 'system', 'media', 'bootaudio.mp3'))
+            delDir(os.path.join(release_dir, 'system', 'media', 'shutanimation.zip'))
+            delDir(os.path.join(release_dir, 'system', 'media', 'shutaudio.mp3'))
+            copyDir(out_media_dir, os.path.join(release_dir, 'system'))
+
+
+def build_mul_logo(sub_path):
+    mul_logos_path = os.path.join(sub_path, 'mul_logos')
+    if os.path.exists(mul_logos_path):
+        mul_logos = os.listdir(mul_logos_path)
+        for i in mul_logos:
+            sub_path = os.path.join(mul_logos_path, i)
+            out_path = os.path.join(release_dir, 'system', 'mul_logos', i)
+            if os.path.isdir(sub_path):
+                if i == '0':
+                    is_default = True
+                else:
+                    is_default = False
+                os.makedirs(out_path)
+                build_one_logo(sub_path, out_path, is_default)
+                for i in os.listdir(sub_path):
+                    if (i != 'logo') and (i != 'media'):
+                        copyDir(os.path.join(sub_path, i), out_path)
+
+
 def main():
     global subs, success_files, source_path, change_mode, source_base_path, set_timestamp
 
@@ -433,7 +573,7 @@ def main():
         timestamp = set_timestamp
     else:
         timestamp = datetime.datetime.now().strftime('%Y-%m-%d_%H_%M')
-    modem_name = getProp(ProjectConfigPath, 'CUSTOM_MODEM')
+    modem_name = getProp(ProjectConfigPath, 'CUSTOM_MODEM').strip()
     BPL_path = getBPLPath(modem_base_path, modem_name)
 
     if test_exists(source_path):
@@ -443,7 +583,7 @@ def main():
                 sys.stderr.write('del error\n')
                 exit()
             os.mkdir(release_dir)
-            #拷贝文件
+            # 拷贝文件
             if not change_mode:
                 for file in copy_files:
                     src = os.path.join(source_path, file)
@@ -457,23 +597,27 @@ def main():
                 copyFile(default_fat_sparse_path, release_dir)
             else:
                 os.system('cp -a %s/* %s' % (source_path, release_dir))
-            #读取build.prop属性
+            # 读取build.prop属性
             build_prop_path = os.path.join(release_dir, 'system/build.prop')
             custom_version = getProp(build_prop_path, 'ro.custom.build.version')
             version = split_version(custom_version)
-            #拷贝BPL文件
+            # 拷贝BPL文件
             if not change_mode:
                 copyFile(BPL_path, os.path.join(release_dir, format_version('pcbv', version) + '.src'))
-            #修改build.prop属性
+            # 修改build.prop属性
             new_prop_version = format_version('t.pcbsv', version, subversion=sub)
             setProp(build_prop_path, 'ro.custom.build.version', new_prop_version)
             setProp(build_prop_path, 'ro.build.date.utc', shell_format_date_utc)
             setProp(build_prop_path, 'ro.build.date', shell_format_date)
             if sub.find('@') == -1:
-                print 'execute %s' % sub
+                print 'build logo changeBin_%s' % sub
+                build_mul_logo('changeBin_' + sub)
+                print 'execute changeBin_%s' % sub
                 os.system('cd %s;./build' % ('changeBin_' + sub,))
             else:
                 ex_subs = sub.split('@')
+                print 'build logo changeBin_%s' % ex_subs[0]
+                build_mul_logo('changeBin_' + ex_subs[0])
                 print 'execute changeBin_%s' % ex_subs[0]
                 os.system('cd changeBin_%s;./build' % ex_subs[0])
                 for ex in range(1, len(ex_subs)):
