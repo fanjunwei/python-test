@@ -1,63 +1,79 @@
 # coding=utf-8
+import base64
 import hashlib
 import mimetypes
 import struct
+import threading
 import time
 import datetime
 import urllib
 import urllib2
 import uuid
+from xml.dom import minidom
+import requests
 
 __author__ = 'fanjunwei003'
-#
-# public static String encode(int id, String route, JSONObject msg) {
-# String str = msg.toString();
-# if (route.length() > 255) {
-# throw new RuntimeException("route max length is overflow.");
-# }
-# 		byte[] arr = new byte[HEADER + route.length()];
-# 		int index = 0;
-# 		arr[index++] = (byte) ((id >> 24) & 0xFF);
-# 		arr[index++] = (byte) ((id >> 16) & 0xFF);
-# 		arr[index++] = (byte) ((id >> 8) & 0xFF);
-# 		arr[index++] = (byte) (id & 0xFF);
-# 		arr[index++] = (byte) (route.length() & 0xFF);
-#
-# 		for (int i = 0; i < route.length(); i++) {
-# 			arr[index++] = (byte) route.codePointAt(i);
-# 		}
-# 		return bt2Str(arr, 0, arr.length) + str;
-# 	}
-#
-# 	private static String bt2Str(byte[] arr, int start, int end) {
-# 		StringBuffer buff = new StringBuffer();
-# 		for (int i = start; i < arr.length && i < end; i++) {
-# 			buff.append(String.valueOf(Character.toChars((arr[i]+256) % 256)));
-# 		}
-# 		return buff.toString();
-# 	}
-#
-def download_news_image(url):
-    req = urllib2.Request(url)
-    res = urllib2.urlopen(req)
-    if res.code==200:
-        type=res.headers.type
-        ext= mimetypes.guess_all_extensions(type)
-        if ext:
-            fileName = str(uuid.uuid1()) + ext[0]
+
+
+def strMD5(str):
+    if type(str) == unicode:
+        str = str.encode('utf-8')
+    return hashlib.md5(str).hexdigest().upper()
+
+
+def parse_data(data):
+    if data.startswith('<result>1</result>'):
+        data = data.replace('<result>1</result>', '')
+        result = {}
+        if type(data) == unicode:
+            data = data.encode('utf-8')
+        elif type(data) == str:
+            pass
         else:
-            fileName = str(uuid.uuid1()) + ".jpg"
-        path = '/Users/fanjunwei003/Desktop/' + "news_img/" + fileName
-        file=open(path,'wb')
-        file.write(res.read())
-        file.close()
-        res.close()
-        return ''+fileName
+            data = str(data)
+
+        doc = minidom.parseString(data)
+
+        params = [ele for ele in doc.childNodes[0].childNodes
+                  if isinstance(ele, minidom.Element)]
+
+        for param in params:
+            if param.childNodes:
+                text = param.childNodes[0]
+                result[param.tagName] = text.data
+        return result
     else:
         return None
 
 
-download_news_image('http://www.baidu.com/img/baidu_sylogo1.gif')
+def identify(file_path):
+    try:
+        url = 'http://eng.ccyunmai.com:5008/SrvEngine'
+        action = 'idcard'
+        username = 'testbjllkj'
+        key = str(uuid.uuid1())
+        time_str = str(int(time.time() * 1000))
+        password = 'sjsj34953sdkdsu5ssek234ksd234dswpoiu'
+        verify = strMD5(action + username + key + time_str + password)
+        file = open(file_path, 'rb')
+        data = '''<action>%s</action>
+<client>%s</client>
+<system>ubuntu</system>
+<key>%s</key>
+<time>%s</time>
+<verify>%s</verify>
+<file>%s</file>
+<ext>jpg</ext>''' % (action, username, key, time_str, verify, file.read())
+        file.close()
+        req = urllib2.Request(url, data)
+        response = urllib2.urlopen(req)
+        res = response.read()
+        return parse_data(res)
+    except:
+        return None
 
 
+res = identify('/Users/fanjunwei003/Desktop/test_f.jpg')
+
+print res
 
